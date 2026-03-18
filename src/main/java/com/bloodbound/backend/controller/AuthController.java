@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Optional;
@@ -53,11 +54,15 @@ public class AuthController {
 
         userRepository.save(newUser);
 
-        // 👈 FIXED: Now using the 3-argument constructor (boolean, data, message)
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(new ApiResponse(true, newUser, "Registration successful!"));
     }
 
+    // FIX: @Transactional(readOnly = true) forces a fresh DB read on every
+    // login request, bypassing any stale Hibernate session cache.
+    // This guarantees that after a password change, the next login always
+    // reads the latest BCrypt hash from the database — not a cached copy.
+    @Transactional(readOnly = true)
     @PostMapping("/login")
     public ResponseEntity<ApiResponse> login(@RequestBody AuthRequest request) {
         Optional<User> userOpt = userRepository.findByEmail(request.getEmail());
@@ -65,7 +70,6 @@ public class AuthController {
         if (userOpt.isPresent()) {
             User user = userOpt.get();
             if (passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
-                // 👈 FIXED: Now using the 3-argument constructor (boolean, data, message)
                 return ResponseEntity.ok(new ApiResponse(true, user, "Login successful!"));
             }
         }

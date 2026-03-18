@@ -25,13 +25,16 @@ public class User {
 
     private String role; // 'DONOR' or 'REQUESTER'
 
-    // 👇 ADDED THESE TWO MISSING FIELDS 👇
     @Column(name = "hospital_or_org")
     private String hospitalOrOrg;
 
     @Column(name = "contact_number")
     private String contactNumber;
-    // 👆 ============================== 👆
+
+    // --- API #6 REQUIREMENT: BLOB / BYTES for Profile Photo ---
+    @Lob
+    @Column(name = "profile_picture")
+    private byte[] profilePicture;
 
     @Column(name = "last_donation_date")
     private LocalDateTime lastDonationDate;
@@ -42,8 +45,8 @@ public class User {
     @Column(name = "created_at")
     private LocalDateTime createdAt = LocalDateTime.now();
 
-
     // --- MANUAL GETTERS ---
+    public byte[] getProfilePicture() { return profilePicture; } // New
     public String getHospitalOrOrg() { return hospitalOrOrg; }
     public String getContactNumber() { return contactNumber; }
     public Long getId() { return id; }
@@ -57,6 +60,7 @@ public class User {
     public LocalDateTime getCreatedAt() { return createdAt; }
 
     // --- MANUAL SETTERS ---
+    public void setProfilePicture(byte[] profilePicture) { this.profilePicture = profilePicture; } // New
     public void setHospitalOrOrg(String hospitalOrOrg) { this.hospitalOrOrg = hospitalOrOrg; }
     public void setContactNumber(String contactNumber) { this.contactNumber = contactNumber; }
     public void setId(Long id) { this.id = id; }

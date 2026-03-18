@@ -32,6 +32,7 @@ public class SecurityConfig {
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/auth/**").permitAll() // ✅ auth endpoints open
+                        .requestMatchers("/api/v1/profile/**").permitAll()
                         .anyRequest().authenticated()
                 );
         return http.build();
