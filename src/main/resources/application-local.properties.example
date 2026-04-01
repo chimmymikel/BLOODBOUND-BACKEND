@@ -1,0 +1,8 @@
+# ==========================================
+# Copy this file to application-local.properties
+# and fill in your own values
+# ==========================================
+spring.datasource.url=jdbc:postgresql://<host>:<port>/postgres?user=<user>&password=<password>&prepareThreshold=0
+spring.datasource.username=<your-db-username>
+spring.datasource.password=<your-db-password>
+jwt.secret=<your-jwt-secret-minimum-256-bits>
