@@ -13,6 +13,8 @@ public class RequestResponse {
     private LocalDateTime createdAt;
     private String hospitalName;
     private Integer commitmentCount; // ← MISSING — frontend shows donor count badge
+    private String requesterName;
+    private String requesterContactNumber;
 
     // Getters
     public Long getId()                   { return id; }
@@ -25,6 +27,8 @@ public class RequestResponse {
     public LocalDateTime getCreatedAt()   { return createdAt; }
     public String getHospitalName()       { return hospitalName; }
     public Integer getCommitmentCount()   { return commitmentCount; }
+    public String getRequesterName()          { return requesterName; }
+    public String getRequesterContactNumber() { return requesterContactNumber; }
 
     // Setters
     public void setId(Long id)                        { this.id = id; }
@@ -37,4 +41,7 @@ public class RequestResponse {
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public void setHospitalName(String hospitalName)  { this.hospitalName = hospitalName; }
     public void setCommitmentCount(Integer count)     { this.commitmentCount = count; }
+    public void setRequesterName(String name)           { this.requesterName = name; }
+    public void setRequesterContactNumber(String num)   { this.requesterContactNumber = num; }
+
 }

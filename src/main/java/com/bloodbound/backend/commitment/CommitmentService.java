@@ -23,7 +23,7 @@ public class CommitmentService {
     @Autowired private UserRepository       userRepository;
     @Autowired private HospitalRepository   hospitalRepository;
 
-    // ✅ FIXED: Full WHO-standard blood compatibility chart
+    // ✅ Full WHO-standard blood compatibility chart
     private static final Map<String, List<String>> COMPATIBLE_DONORS = Map.of(
             "O_NEGATIVE",  List.of("O_NEGATIVE"),
             "O_POSITIVE",  List.of("O_NEGATIVE", "O_POSITIVE"),
@@ -66,7 +66,7 @@ public class CommitmentService {
             }
         }
 
-        // ✅ FIXED: Full compatibility chart instead of just O_NEGATIVE check
+        // ✅ Compatibility check
         String donorBT  = donor.getBloodType();
         String neededBT = bloodRequest.getBloodType();
         List<String> compatibleDonors = COMPATIBLE_DONORS.getOrDefault(neededBT, List.of());
@@ -127,6 +127,13 @@ public class CommitmentService {
 
             requestRepository.findById(c.getRequestId()).ifPresent(req -> {
                 ticket.put("bloodTypeNeeded", req.getBloodType());
+
+                // ✅ NEW: Map Requester Details for the Donor's Ticket
+                userRepository.findById(req.getRequesterId()).ifPresent(requester -> {
+                    ticket.put("requesterName", requester.getFullName());
+                    ticket.put("requesterContactNumber", requester.getContactNumber());
+                });
+
                 if (req.getHospitalId() != null) {
                     hospitalRepository.findById(req.getHospitalId())
                             .ifPresent(h -> ticket.put("hospitalName", h.getName()));
@@ -158,7 +165,7 @@ public class CommitmentService {
             return CancelResult.notCancellable();
         }
 
-        // ✅ FIXED: Soft-delete — preserve history, never hard-delete
+        // Soft-delete — preserve history
         commitment.setStatus("CANCELLED");
         commitmentRepository.save(commitment);
 

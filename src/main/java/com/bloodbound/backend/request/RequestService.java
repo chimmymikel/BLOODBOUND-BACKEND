@@ -3,6 +3,7 @@ package com.bloodbound.backend.request;
 import com.bloodbound.backend.commitment.CommitmentRepository;
 import com.bloodbound.backend.common.RequestFulfilledEvent;
 import com.bloodbound.backend.hospital.HospitalRepository;
+import com.bloodbound.backend.identity.UserRepository; // Added specific import
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -16,6 +17,7 @@ import java.util.stream.Collectors;
 @Service
 public class RequestService {
 
+    @Autowired private UserRepository        userRepository;
     @Autowired private RequestRepository     requestRepository;
     @Autowired private HospitalRepository    hospitalRepository;
     @Autowired private CommitmentRepository  commitmentRepository;
@@ -96,8 +98,19 @@ public class RequestService {
         dto.setNotes(req.getNotes());
         dto.setLocation(req.getLocation());
         dto.setCreatedAt(req.getCreatedAt());
+
+        // Count existing donor commitments for this request
         dto.setCommitmentCount(commitmentRepository.findByRequestId(req.getId()).size());
 
+        // ✅ NEW: Map Requester Details (Contact Number and Name)
+        if (req.getRequesterId() != null) {
+            userRepository.findById(req.getRequesterId()).ifPresent(user -> {
+                dto.setRequesterName(user.getFullName());
+                dto.setRequesterContactNumber(user.getContactNumber());
+            });
+        }
+
+        // Map Hospital Name
         if (req.getHospitalId() != null) {
             hospitalRepository.findById(req.getHospitalId())
                     .ifPresentOrElse(
