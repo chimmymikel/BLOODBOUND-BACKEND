@@ -1,27 +1,33 @@
 package com.bloodbound.backend.request;
 
+import com.bloodbound.backend.commitment.Commitment;
 import com.bloodbound.backend.commitment.CommitmentRepository;
 import com.bloodbound.backend.common.RequestFulfilledEvent;
 import com.bloodbound.backend.hospital.HospitalRepository;
-import com.bloodbound.backend.identity.UserRepository; // Added specific import
+import com.bloodbound.backend.identity.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
 public class RequestService {
 
-    @Autowired private UserRepository        userRepository;
-    @Autowired private RequestRepository     requestRepository;
-    @Autowired private HospitalRepository    hospitalRepository;
-    @Autowired private CommitmentRepository  commitmentRepository;
+    @Autowired private UserRepository           userRepository;
+    @Autowired private RequestRepository        requestRepository;
+    @Autowired private HospitalRepository       hospitalRepository;
+    @Autowired private CommitmentRepository     commitmentRepository;
     @Autowired private ApplicationEventPublisher eventPublisher;
+
+    // ── Query methods ─────────────────────────────────────────────────────────
 
     public List<RequestResponse> getRequests(String status, String bloodType,
                                              String urgency, Long requesterId) {
@@ -41,12 +47,16 @@ public class RequestService {
             results = requestRepository.findAll();
         }
 
-        return results.stream().map(this::mapToDto).collect(Collectors.toList());
+        return results.stream()
+                .map(this::mapToDto)
+                .collect(Collectors.toList());
     }
 
     public Optional<RequestResponse> getById(Long id) {
         return requestRepository.findById(id).map(this::mapToDto);
     }
+
+    // ── Mutations ─────────────────────────────────────────────────────────────
 
     public RequestResponse createRequest(CreateRequestRequest body) {
         Request r = new Request();
@@ -88,8 +98,12 @@ public class RequestService {
         return FulfillResult.success(mapToDto(request));
     }
 
+    // ── DTO mapping ───────────────────────────────────────────────────────────
+
     private RequestResponse mapToDto(Request req) {
         RequestResponse dto = new RequestResponse();
+
+        // ── Scalar fields ────────────────────────────────────────────────────
         dto.setId(req.getId());
         dto.setBloodType(req.getBloodType());
         dto.setUnits(req.getUnits());
@@ -99,10 +113,30 @@ public class RequestService {
         dto.setLocation(req.getLocation());
         dto.setCreatedAt(req.getCreatedAt());
 
-        // Count existing donor commitments for this request
-        dto.setCommitmentCount(commitmentRepository.findByRequestId(req.getId()).size());
+        // ── Commitments for this specific request ────────────────────────────
+        List<Commitment> commitments = commitmentRepository.findByRequestId(req.getId());
+        dto.setCommitmentCount(commitments.size());
 
-        // ✅ NEW: Map Requester Details (Contact Number and Name)
+        // ── Donor contact cards (only PENDING or COMPLETED commitments) ──────
+        // Using a plain List<Map<String,String>> avoids any JPA lazy-loading
+        // or circular reference issues during Jackson serialisation.
+        List<Map<String, String>> donorCards = new ArrayList<>();
+
+        for (Commitment c : commitments) {
+            if ("PENDING".equals(c.getStatus()) || "COMPLETED".equals(c.getStatus())) {
+                userRepository.findById(c.getDonorId()).ifPresent(donor -> {
+                    Map<String, String> card = new HashMap<>();
+                    card.put("name",          donor.getFullName()      != null ? donor.getFullName()      : "—");
+                    card.put("contactNumber", donor.getContactNumber() != null ? donor.getContactNumber() : "—");
+                    card.put("bloodType",     donor.getBloodType()     != null ? donor.getBloodType()     : "—");
+                    donorCards.add(card);
+                });
+            }
+        }
+
+        dto.setCommittedDonors(donorCards);
+
+        // ── Requester contact details (shown to committed donors) ────────────
         if (req.getRequesterId() != null) {
             userRepository.findById(req.getRequesterId()).ifPresent(user -> {
                 dto.setRequesterName(user.getFullName());
@@ -110,7 +144,7 @@ public class RequestService {
             });
         }
 
-        // Map Hospital Name
+        // ── Hospital name ────────────────────────────────────────────────────
         if (req.getHospitalId() != null) {
             hospitalRepository.findById(req.getHospitalId())
                     .ifPresentOrElse(
@@ -120,6 +154,7 @@ public class RequestService {
         } else {
             dto.setHospitalName("No Hospital Specified");
         }
+
         return dto;
     }
 }
