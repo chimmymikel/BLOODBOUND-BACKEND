@@ -17,7 +17,6 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 
 import java.util.List;
 
@@ -53,6 +52,7 @@ public class SecurityConfig {
                         // ── Preflight ──────────────────────────────────────
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         // ── Public endpoints ───────────────────────────────
+                        .requestMatchers("/", "/error").permitAll() // <-- The fix is here
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers("/api/v1/hospitals").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/hospitals/**").permitAll()
