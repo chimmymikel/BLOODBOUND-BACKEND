@@ -11,21 +11,79 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
 public class RequestService {
 
-    @Autowired private UserRepository           userRepository;
-    @Autowired private RequestRepository        requestRepository;
-    @Autowired private HospitalRepository       hospitalRepository;
-    @Autowired private CommitmentRepository     commitmentRepository;
+    @Autowired private UserRepository            userRepository;
+    @Autowired private RequestRepository         requestRepository;
+    @Autowired private HospitalRepository        hospitalRepository;
+    @Autowired private CommitmentRepository      commitmentRepository;
     @Autowired private ApplicationEventPublisher eventPublisher;
+
+    // ── Blood type compatibility map ──────────────────────────────────────────
+    // Key   = donor's blood type  (MUST match DB/underscore format e.g. "O_POSITIVE")
+    // Value = request blood types this donor CAN donate to
+    //
+    // ✅ FIX: Keys and values now use UNDERSCORE format matching the database.
+    //         The old map used short-form keys ("O+", "A-", etc.) so every
+    //         lookup for "O_POSITIVE" fell through to the default — returning
+    //         only exact blood-type matches instead of compatible ones.
+    //         That is why an O+ donor only ever saw O+ requests.
+    private static final Map<String, List<String>> COMPATIBILITY = new HashMap<>();
+    static {
+        // O- (universal donor) can donate to everyone
+        COMPATIBILITY.put("O_NEGATIVE", List.of(
+                "O_NEGATIVE", "O_POSITIVE",
+                "A_NEGATIVE", "A_POSITIVE",
+                "B_NEGATIVE", "B_POSITIVE",
+                "AB_NEGATIVE", "AB_POSITIVE"
+        ));
+
+        // O+ can donate to all positive types
+        COMPATIBILITY.put("O_POSITIVE", List.of(
+                "O_POSITIVE",
+                "A_POSITIVE",
+                "B_POSITIVE",
+                "AB_POSITIVE"
+        ));
+
+        // A- can donate to A and AB (both +/-)
+        COMPATIBILITY.put("A_NEGATIVE", List.of(
+                "A_NEGATIVE", "A_POSITIVE",
+                "AB_NEGATIVE", "AB_POSITIVE"
+        ));
+
+        // A+ can donate to A+ and AB+
+        COMPATIBILITY.put("A_POSITIVE", List.of(
+                "A_POSITIVE",
+                "AB_POSITIVE"
+        ));
+
+        // B- can donate to B and AB (both +/-)
+        COMPATIBILITY.put("B_NEGATIVE", List.of(
+                "B_NEGATIVE", "B_POSITIVE",
+                "AB_NEGATIVE", "AB_POSITIVE"
+        ));
+
+        // B+ can donate to B+ and AB+
+        COMPATIBILITY.put("B_POSITIVE", List.of(
+                "B_POSITIVE",
+                "AB_POSITIVE"
+        ));
+
+        // AB- can donate to AB- and AB+
+        COMPATIBILITY.put("AB_NEGATIVE", List.of(
+                "AB_NEGATIVE", "AB_POSITIVE"
+        ));
+
+        // AB+ can only donate to AB+
+        COMPATIBILITY.put("AB_POSITIVE", List.of(
+                "AB_POSITIVE"
+        ));
+    }
 
     // ── Query methods ─────────────────────────────────────────────────────────
 
@@ -34,15 +92,28 @@ public class RequestService {
         List<Request> results;
 
         if (requesterId != null) {
+            // Requester fetching their own requests — no compatibility filtering needed
             results = requestRepository.findByRequesterId(requesterId);
+
         } else if (status != null && bloodType != null && urgency != null) {
-            results = requestRepository.findByStatusAndBloodTypeAndUrgency(status, bloodType, urgency);
+            // Donor with bloodType filter + urgency filter
+            List<String> compatible = COMPATIBILITY.getOrDefault(bloodType, List.of(bloodType));
+            results = requestRepository.findByStatusAndBloodTypeIn(status, compatible)
+                    .stream()
+                    .filter(r -> r.getUrgency().equalsIgnoreCase(urgency))
+                    .collect(Collectors.toList());
+
         } else if (status != null && bloodType != null) {
-            results = requestRepository.findByStatusAndBloodType(status, bloodType);
+            // Donor with bloodType filter only — expand to all compatible request types
+            List<String> compatible = COMPATIBILITY.getOrDefault(bloodType, List.of(bloodType));
+            results = requestRepository.findByStatusAndBloodTypeIn(status, compatible);
+
         } else if (status != null && urgency != null) {
             results = requestRepository.findByStatusAndUrgency(status, urgency);
+
         } else if (status != null) {
             results = requestRepository.findByStatus(status);
+
         } else {
             results = requestRepository.findAll();
         }
@@ -76,20 +147,11 @@ public class RequestService {
     public FulfillResult fulfillRequest(Long requestId, Long loggedInUserId) {
         Optional<Request> requestOpt = requestRepository.findById(requestId);
 
-        if (requestOpt.isEmpty()) {
-            return FulfillResult.notFound();
-        }
+        if (requestOpt.isEmpty())                                      return FulfillResult.notFound();
+        if (!requestOpt.get().getRequesterId().equals(loggedInUserId)) return FulfillResult.forbidden();
+        if (!requestOpt.get().getStatus().equals("ACTIVE"))            return FulfillResult.alreadyFulfilled();
 
         Request request = requestOpt.get();
-
-        if (!request.getRequesterId().equals(loggedInUserId)) {
-            return FulfillResult.forbidden();
-        }
-
-        if (!request.getStatus().equals("ACTIVE")) {
-            return FulfillResult.alreadyFulfilled();
-        }
-
         request.setStatus("FULFILLED");
         request.setFulfilledAt(LocalDateTime.now());
         requestRepository.save(request);
@@ -103,7 +165,6 @@ public class RequestService {
     private RequestResponse mapToDto(Request req) {
         RequestResponse dto = new RequestResponse();
 
-        // ── Scalar fields ────────────────────────────────────────────────────
         dto.setId(req.getId());
         dto.setBloodType(req.getBloodType());
         dto.setUnits(req.getUnits());
@@ -113,15 +174,10 @@ public class RequestService {
         dto.setLocation(req.getLocation());
         dto.setCreatedAt(req.getCreatedAt());
 
-        // ── Commitments for this specific request ────────────────────────────
         List<Commitment> commitments = commitmentRepository.findByRequestId(req.getId());
         dto.setCommitmentCount(commitments.size());
 
-        // ── Donor contact cards (only PENDING or COMPLETED commitments) ──────
-        // Using a plain List<Map<String,String>> avoids any JPA lazy-loading
-        // or circular reference issues during Jackson serialisation.
         List<Map<String, String>> donorCards = new ArrayList<>();
-
         for (Commitment c : commitments) {
             if ("PENDING".equals(c.getStatus()) || "COMPLETED".equals(c.getStatus())) {
                 userRepository.findById(c.getDonorId()).ifPresent(donor -> {
@@ -133,10 +189,8 @@ public class RequestService {
                 });
             }
         }
-
         dto.setCommittedDonors(donorCards);
 
-        // ── Requester contact details (shown to committed donors) ────────────
         if (req.getRequesterId() != null) {
             userRepository.findById(req.getRequesterId()).ifPresent(user -> {
                 dto.setRequesterName(user.getFullName());
@@ -144,7 +198,6 @@ public class RequestService {
             });
         }
 
-        // ── Hospital name ────────────────────────────────────────────────────
         if (req.getHospitalId() != null) {
             hospitalRepository.findById(req.getHospitalId())
                     .ifPresentOrElse(

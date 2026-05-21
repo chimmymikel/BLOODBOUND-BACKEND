@@ -17,4 +17,7 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
     List<Request> findByStatusAndBloodTypeAndUrgency(String status, String bloodType, String urgency);
 
     List<Request> findByRequesterId(Long requesterId);
+
+    // ← new: for compatibility filtering
+    List<Request> findByStatusAndBloodTypeIn(String status, List<String> bloodTypes);
 }
